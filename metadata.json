@@ -1,0 +1,6 @@
+{
+  "name": "Vanguard v4.0 - Web3 Due Diligence Agent",
+  "description": "Autonomous institutional Web3 due diligence agent with 12-step research protocol, 15-factor scoring matrix, and 2026 red flags audit.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
