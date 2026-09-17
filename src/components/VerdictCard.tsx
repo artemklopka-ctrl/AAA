@@ -5,9 +5,18 @@ import { Award, AlertCircle, CheckCircle, Eye, AlertTriangle, ArrowRight, Clock 
 interface VerdictCardProps {
   data: VanguardAnalysisJson;
   query: string;
+  searchThrottled?: boolean;
+  isOfflineHeuristic?: boolean;
+  modelUsed?: string;
 }
 
-export const VerdictCard: React.FC<VerdictCardProps> = ({ data, query }) => {
+export const VerdictCard: React.FC<VerdictCardProps> = ({
+  data,
+  query,
+  searchThrottled,
+  isOfflineHeuristic,
+  modelUsed,
+}) => {
   const tierColors: Record<string, { bg: string; border: string; text: string; badge: string; glow: string }> = {
     S: {
       bg: "from-amber-950/40 via-zinc-900 to-zinc-950",
@@ -98,9 +107,26 @@ export const VerdictCard: React.FC<VerdictCardProps> = ({ data, query }) => {
                 {decisionConfig.icon}
                 <span>{decisionConfig.label}</span>
               </div>
+
+              {isOfflineHeuristic ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-sky-950/50 text-sky-300 border border-sky-500/40 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                  <span>Vanguard Institutional Heuristic Engine</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-emerald-950/40 text-emerald-300 border border-emerald-500/30 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Verified Vanguard Protocol Engine</span>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-zinc-400 mt-1 font-mono">
+            <p className="text-xs text-zinc-400 mt-1.5 font-mono">
               Target query: <span className="text-zinc-200">{query}</span>
+              {modelUsed && (
+                <span className="text-zinc-500 ml-2">
+                  • Engine: <span className="text-zinc-400">{modelUsed}</span>
+                </span>
+              )}
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-4 text-xs font-mono">

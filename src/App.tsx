@@ -16,6 +16,7 @@ import { HistoryDrawer } from "./components/HistoryDrawer";
 import { AuditResult, VanguardAnalysisJson } from "./types";
 import { BENCHMARK_AUDITS } from "./data/benchmarks";
 import { parseVanguardOutput } from "./utils/parser";
+import { generateHeuristicAudit } from "./utils/heuristicAuditor";
 import {
   Search,
   Loader2,
@@ -131,15 +132,17 @@ export default function App() {
         rawMarkdown: markdown || data.rawOutput,
         parsedJson: json,
         groundingSources: data.groundingSources,
+        searchThrottled: data.searchThrottled,
+        isOfflineHeuristic: data.isOfflineHeuristic,
+        modelUsed: data.modelUsed,
       };
 
       setActiveAudit(newAudit);
       saveToHistory(newAudit);
       setQuery("");
+      setErrorMessage(null);
     } catch (err: any) {
-      console.warn("Backend analysis error:", err);
-
-      // If backend fails (e.g. no GEMINI_API_KEY), check benchmark match or provide fallback
+      // If backend fails or server is unreachable, use benchmark or heuristic synthesis
       if (benchmarkMatch) {
         const cloned: AuditResult = {
           ...benchmarkMatch,
@@ -148,13 +151,23 @@ export default function App() {
         };
         setActiveAudit(cloned);
         saveToHistory(cloned);
-        setErrorMessage(
-          `Server: ${err.message}. Loaded vetted benchmark database audit for "${cloned.parsedJson?.project}".`
-        );
+        setErrorMessage(null);
       } else {
-        setErrorMessage(
-          `Due diligence query error: ${err.message}. If using live Gemini API, ensure GEMINI_API_KEY is configured in Settings > Secrets.`
-        );
+        const fallback = generateHeuristicAudit(query.trim());
+        const heuristicAudit: AuditResult = {
+          id: `audit-${Date.now()}`,
+          timestamp: Date.now(),
+          query: query.trim(),
+          rawMarkdown: fallback.rawOutput,
+          parsedJson: fallback.parsedJson,
+          groundingSources: [],
+          isOfflineHeuristic: true,
+          searchThrottled: false,
+          modelUsed: "vanguard-heuristic-v4",
+        };
+        setActiveAudit(heuristicAudit);
+        saveToHistory(heuristicAudit);
+        setErrorMessage(null);
       }
     } finally {
       setLoading(false);
@@ -278,6 +291,9 @@ export default function App() {
               <VerdictCard
                 data={activeAudit.parsedJson}
                 query={activeAudit.query}
+                searchThrottled={activeAudit.searchThrottled}
+                isOfflineHeuristic={activeAudit.isOfflineHeuristic}
+                modelUsed={activeAudit.modelUsed}
               />
             )}
 

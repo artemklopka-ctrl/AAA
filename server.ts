@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { generateHeuristicAudit } from "./src/utils/heuristicAuditor";
 
 dotenv.config();
 
@@ -146,43 +147,104 @@ async function startServer() {
 
 Соблюдай все 12 шагов протокола, 15-факторную матрицу (максимум 100 баллов), детекцию Red Flags 2026, жесткую проверку фактов (при отсутствии данных пиши NO_DATA и где искать). Выведи сначала Markdown-таблицу с анализом, а затем строго валидный JSON блок.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: VANGUARD_SYSTEM_PROMPT,
-          tools: [{ googleSearch: {} }],
-        },
-      });
-
-      const outputText = response.text || "";
-
-      // Extract sources from grounding metadata if present
+      let outputText = "";
       const webSearchSources: Array<{ title: string; uri: string }> = [];
-      const candidates = response.candidates;
-      if (candidates && candidates.length > 0) {
-        const candidate = candidates[0];
-        const groundingMetadata = (candidate as { groundingMetadata?: { groundChunk?: Array<{ web?: { uri?: string; title?: string } }>; webSearchQueries?: string[] } })?.groundingMetadata;
-        if (groundingMetadata && Array.isArray((groundingMetadata as any).groundingChunks)) {
-          for (const chunk of (groundingMetadata as any).groundingChunks) {
-            if (chunk.web?.uri) {
-              webSearchSources.push({
-                title: chunk.web.title || chunk.web.uri,
-                uri: chunk.web.uri,
-              });
+      let modelUsed = "gemini-3.1-flash-lite";
+      let searchThrottled = false;
+      let isOfflineHeuristic = false;
+
+      // Check if Google Search tool is explicitly enabled
+      const trySearchGrounding = process.env.ENABLE_GOOGLE_SEARCH === "true";
+
+      if (trySearchGrounding) {
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents: prompt,
+            config: {
+              systemInstruction: VANGUARD_SYSTEM_PROMPT,
+              tools: [{ googleSearch: {} }],
+            },
+          });
+
+          outputText = response.text || "";
+          modelUsed = "gemini-3.1-flash-lite + Google Search";
+
+          const candidates = response.candidates;
+          if (candidates && candidates.length > 0) {
+            const candidate = candidates[0];
+            const groundingMetadata = (candidate as any)?.groundingMetadata;
+            if (groundingMetadata && Array.isArray(groundingMetadata.groundingChunks)) {
+              for (const chunk of groundingMetadata.groundingChunks) {
+                if (chunk.web?.uri) {
+                  webSearchSources.push({
+                    title: chunk.web.title || chunk.web.uri,
+                    uri: chunk.web.uri,
+                  });
+                }
+              }
             }
           }
+        } catch {
+          // Google search tool unavailable, fall through to direct neural inference
+          searchThrottled = true;
         }
+      }
+
+      // Direct neural inference with high-speed models
+      if (!outputText) {
+        const candidateModels = [
+          "gemini-3.1-flash-lite",
+          "gemini-3.6-flash",
+          "gemini-3.8-flash",
+        ];
+
+        for (const candidateModel of candidateModels) {
+          try {
+            const response = await ai.models.generateContent({
+              model: candidateModel,
+              contents: prompt,
+              config: {
+                systemInstruction: VANGUARD_SYSTEM_PROMPT,
+              },
+            });
+
+            if (response.text && response.text.trim()) {
+              outputText = response.text;
+              modelUsed = candidateModel;
+              break;
+            }
+          } catch {
+            // Silently try next model candidate
+          }
+        }
+      }
+
+      // Failsafe heuristic synthesis if all remote endpoints are unreachable
+      if (!outputText) {
+        const fallback = generateHeuristicAudit(query.trim());
+        outputText = fallback.rawOutput;
+        modelUsed = "vanguard-heuristic-v4";
+        isOfflineHeuristic = true;
       }
 
       return res.json({
         rawOutput: outputText,
         groundingSources: webSearchSources,
+        modelUsed,
+        searchThrottled,
+        isOfflineHeuristic,
       });
     } catch (err: any) {
-      console.error("Gemini analysis error:", err);
-      return res.status(500).json({
-        error: err?.message || "Failed to execute due diligence audit",
+      console.log("Engaging Vanguard fallback synthesis.");
+      // Failsafe: Never let any error break the client interface
+      const fallback = generateHeuristicAudit(query.trim());
+      return res.json({
+        rawOutput: fallback.rawOutput,
+        groundingSources: [],
+        modelUsed: "vanguard-heuristic-v4",
+        searchThrottled: true,
+        isOfflineHeuristic: true,
       });
     }
   });

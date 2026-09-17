@@ -56,6 +56,9 @@ export interface AuditResult {
   parsedJson: VanguardAnalysisJson | null;
   groundingSources?: Array<{ title: string; uri: string }>;
   isPreset?: boolean;
+  searchThrottled?: boolean;
+  isOfflineHeuristic?: boolean;
+  modelUsed?: string;
 }
 
 export interface ResearchStep {
